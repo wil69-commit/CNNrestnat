@@ -17,7 +17,7 @@ def load_trained_model():
     model.fc = nn.Linear(num_ftrs, 2)
     
     # Chargement des poids sauvegardés
-    state_dict = torch.load('bone_fracture_cnn.pth', map_location=torch.device('cpu'))
+    state_dict = torch.load('fracture_cnn.pth', map_location=torch.device('cpu'))
     model.load_state_dict(state_dict)
     model.eval()
     return model
