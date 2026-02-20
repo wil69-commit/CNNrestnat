@@ -1,72 +1,64 @@
 import streamlit as st
 import torch
 import torch.nn as nn
-from torchvision import transforms
+from torchvision import transforms, models
 from PIL import Image
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Détecteur de Fractures", page_icon="🦴")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Détecteur de Fractures ResNet", page_icon="🦴")
 
-# --- 1. DÉFINITION DE L'ARCHITECTURE (Doit être identique au notebook) ---
-class SimpleCNN(nn.Module):
-    def __init__(self):
-        super(SimpleCNN, self).__init__()
-        self.conv_layer1 = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv_layer2 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv_layer3 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(128 * 28 * 28, 512),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(512, 2)
-        )
-
-    def forward(self, x):
-        x = self.conv_layer1(x)
-        x = self.conv_layer2(x)
-        x = self.conv_layer3(x)
-        x = self.classifier(x)
-        return x
-
-# --- 2. CHARGEMENT DU MODÈLE ---
+# --- 1. CHARGEMENT DU MODÈLE RESNET18 ---
 @st.cache_resource
 def load_trained_model():
-    model = SimpleCNN()
-    # Charger sur CPU pour la compatibilité cloud/locale
-    state_dict = torch.load('fracture_cnn.pth', map_location=torch.device('cpu'))
+    # On crée l'architecture ResNet18 identique à ton notebook
+    model = models.resnet18(weights=None) # Pas besoin des poids ImageNet
+    num_ftrs = model.fc.in_features
+    # On remplace la dernière couche pour tes 2 classes
+    model.fc = nn.Linear(num_ftrs, 2)
+    
+    # Chargement des poids sauvegardés
+    state_dict = torch.load('bone_fracture_cnn.pth', map_location=torch.device('cpu'))
     model.load_state_dict(state_dict)
     model.eval()
     return model
 
 try:
     model = load_trained_model()
-    class_names = ['Fracturé', 'Non Fracturé'] # Ordre alphabétique des dossiers
+    class_names = ['Fracturé', 'Non Fracturé']
 except Exception as e:
-    st.error(f"Erreur lors du chargement du modèle : {e}")
+    st.error(f"Erreur de compatibilité : {e}")
+    st.info("Note : Le fichier .pth détecté appartient à un ResNet18.")
     st.stop()
 
-# --- 3. INTERFACE UTILISATEUR ---
-st.title("🦴 Analyse de Radiographies Osseuses")
-st.write("Système d'aide au diagnostic par Deep Learning.")
+# --- 2. INTERFACE STREAMLIT ---
+st.title("🦴 Analyse de Radio (ResNet18)")
 
-uploaded_file = st.file_uploader("Chargez une image de radio (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Chargez une radio...", type=["png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
-    # Affichage de l'image
-    image
+    image = Image.open(uploaded_file).convert('RGB')
+    st.image(image, caption="Image à analyser", use_container_width=True)
+    
+    # Prétraitement
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    
+    img_tensor = transform(image).unsqueeze(0)
+
+    # Prédiction
+    with st.spinner('Analyse par ResNet18...'):
+        with torch.no_grad():
+            outputs = model(img_tensor)
+            probabilities = torch.nn.functional.softmax(outputs, dim=1)
+            prob, predicted = torch.max(probabilities, 1)
+            
+            label = class_names[predicted.item()]
+            confiance = prob.item() * 100
+
+    if label == 'Fracturé':
+        st.error(f"**Résultat : {label} ({confiance:.2f}%)**")
+    else:
+        st.success(f"**Résultat : {label} ({confiance:.2f}%)**")
