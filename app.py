@@ -49,7 +49,7 @@ class SimpleCNN(nn.Module):
 def load_trained_model():
     model = SimpleCNN()
     # Charger sur CPU pour la compatibilité cloud/locale
-    state_dict = torch.load('bone_fracture_cnn.pth', map_location=torch.device('cpu'))
+    state_dict = torch.load('fracture_cnn.pth', map_location=torch.device('cpu'))
     model.load_state_dict(state_dict)
     model.eval()
     return model
